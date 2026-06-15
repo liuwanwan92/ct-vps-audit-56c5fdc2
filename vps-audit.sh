@@ -9,6 +9,17 @@ BLUE='\033[0;34m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
+# Support test fixtures via BASH_ENV (non-interactive shells only)
+# shellcheck disable=SC1090
+[ -n "${BASH_ENV:-}" ] && [ -f "$BASH_ENV" ] && source "$BASH_ENV"
+
+# Configurable file paths (defaults for production use)
+AUDIT_SSHD_CONFIG="${AUDIT_SSHD_CONFIG:-/etc/ssh/sshd_config}"
+AUDIT_SUDOERS="${AUDIT_SUDOERS:-/etc/sudoers}"
+AUDIT_PWQUALITY="${AUDIT_PWQUALITY:-/etc/security/pwquality.conf}"
+AUDIT_REBOOT_REQ="${AUDIT_REBOOT_REQ:-/var/run/reboot-required}"
+AUDIT_AUTH_LOG="${AUDIT_AUTH_LOG:-/var/log/auth.log}"
+
 # Get current timestamp for the report filename
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 REPORT_FILE="vps-audit-report-${TIMESTAMP}.txt"
@@ -103,20 +114,20 @@ echo "" >> "$REPORT_FILE"
 echo -e "System Uptime: $UPTIME (since $UPTIME_SINCE)"
 
 # Check if system requires restart
-if [ -f /var/run/reboot-required ]; then
+if [ -f "$AUDIT_REBOOT_REQ" ]; then
     check_security "System Restart" "WARN" "System requires a restart to apply updates"
 else
     check_security "System Restart" "PASS" "No restart required"
 fi
 
 # Check SSH config overrides
-SSH_CONFIG_OVERRIDES=$(grep "^Include" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}')
+SSH_CONFIG_OVERRIDES=$(grep "^Include" "$AUDIT_SSHD_CONFIG" 2>/dev/null | awk '{print $2}')
 
 # Check SSH root login (handle both main config and overrides if they exist)
 if [ -n "$SSH_CONFIG_OVERRIDES" ] && [ -d "$(dirname "$SSH_CONFIG_OVERRIDES")" ]; then
-    SSH_ROOT=$(grep "^PermitRootLogin" $SSH_CONFIG_OVERRIDES /etc/ssh/sshd_config 2>/dev/null | head -1 | awk '{print $2}')
+    SSH_ROOT=$(grep "^PermitRootLogin" $SSH_CONFIG_OVERRIDES "$AUDIT_SSHD_CONFIG" 2>/dev/null | head -1 | awk '{print $2}')
 else
-    SSH_ROOT=$(grep "^PermitRootLogin" /etc/ssh/sshd_config 2>/dev/null | head -1 | awk '{print $2}')
+    SSH_ROOT=$(grep "^PermitRootLogin" "$AUDIT_SSHD_CONFIG" 2>/dev/null | head -1 | awk '{print $2}')
 fi
 if [ -z "$SSH_ROOT" ]; then
     SSH_ROOT="prohibit-password"
@@ -124,14 +135,14 @@ fi
 if [ "$SSH_ROOT" = "no" ]; then
     check_security "SSH Root Login" "PASS" "Root login is properly disabled in SSH configuration"
 else
-    check_security "SSH Root Login" "FAIL" "Root login is currently allowed - this is a security risk. Disable it in /etc/ssh/sshd_config"
+    check_security "SSH Root Login" "FAIL" "Root login is currently allowed - this is a security risk. Disable it in $AUDIT_SSHD_CONFIG"
 fi
 
 # Check SSH password authentication (handle both main config and overrides if they exist)
 if [ -n "$SSH_CONFIG_OVERRIDES" ] && [ -d "$(dirname "$SSH_CONFIG_OVERRIDES")" ]; then
-    SSH_PASSWORD=$(grep "^PasswordAuthentication" $SSH_CONFIG_OVERRIDES /etc/ssh/sshd_config 2>/dev/null | head -1 | awk '{print $2}')
+    SSH_PASSWORD=$(grep "^PasswordAuthentication" $SSH_CONFIG_OVERRIDES "$AUDIT_SSHD_CONFIG" 2>/dev/null | head -1 | awk '{print $2}')
 else
-    SSH_PASSWORD=$(grep "^PasswordAuthentication" /etc/ssh/sshd_config 2>/dev/null | head -1 | awk '{print $2}')
+    SSH_PASSWORD=$(grep "^PasswordAuthentication" "$AUDIT_SSHD_CONFIG" 2>/dev/null | head -1 | awk '{print $2}')
 fi
 if [ -z "$SSH_PASSWORD" ]; then
     SSH_PASSWORD="yes"
@@ -146,9 +157,9 @@ fi
 UNPRIVILEGED_PORT_START=$(sysctl -n net.ipv4.ip_unprivileged_port_start)
 SSH_PORT=""
 if [ -n "$SSH_CONFIG_OVERRIDES" ] && [ -d "$(dirname "$SSH_CONFIG_OVERRIDES")" ]; then
-    SSH_PORT=$(grep "^Port" $SSH_CONFIG_OVERRIDES /etc/ssh/sshd_config 2>/dev/null | head -1 | awk '{print $2}')
+    SSH_PORT=$(grep "^Port" $SSH_CONFIG_OVERRIDES "$AUDIT_SSHD_CONFIG" 2>/dev/null | head -1 | awk '{print $2}')
 else
-    SSH_PORT=$(grep "^Port" /etc/ssh/sshd_config 2>/dev/null | head -1 | awk '{print $2}')
+    SSH_PORT=$(grep "^Port" "$AUDIT_SSHD_CONFIG" 2>/dev/null | head -1 | awk '{print $2}')
 fi
 if [ -z "$SSH_PORT" ]; then
     SSH_PORT="22"
@@ -248,7 +259,7 @@ case "$IPS_INSTALLED$IPS_ACTIVE" in
 esac
 
 # Check failed login attempts
-LOG_FILE="/var/log/auth.log"
+LOG_FILE="$AUDIT_AUTH_LOG"
 
 if [ -f "$LOG_FILE" ]; then
     FAILED_LOGINS=$(grep -c "Failed password" "$LOG_FILE" 2>/dev/null || echo 0)
@@ -371,15 +382,15 @@ else
 fi
 
 # Check sudo configuration
-if grep -q "^Defaults.*logfile" /etc/sudoers; then
+if grep -q "^Defaults.*logfile" "$AUDIT_SUDOERS"; then
     check_security "Sudo Logging" "PASS" "Sudo commands are being logged for audit purposes"
 else
     check_security "Sudo Logging" "FAIL" "Sudo commands are not being logged - reduces audit capability"
 fi
 
 # Check password policy
-if [ -f "/etc/security/pwquality.conf" ]; then
-    if grep -q "minlen.*12" /etc/security/pwquality.conf; then
+if [ -f "$AUDIT_PWQUALITY" ]; then
+    if grep -q "minlen.*12" "$AUDIT_PWQUALITY"; then
         check_security "Password Policy" "PASS" "Strong password policy is enforced"
     else
         check_security "Password Policy" "FAIL" "Weak password policy - passwords may be too simple"
