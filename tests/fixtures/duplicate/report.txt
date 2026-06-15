@@ -1,0 +1,31 @@
+VPS Security Audit Tool
+https://github.com/vernu/vps-audit
+Starting audit at Mon Jun 15 12:00:00 2026
+================================
+
+Security Audit Results
+================================
+
+System Uptime Information:
+Current uptime: up 1 hour
+System up since: 2026-06-15 00:00:00
+
+[PASS] System Restart - No restart required
+
+[FAIL] SSH Root Login - Root login is currently allowed - this is a security risk.
+
+[WARN] SSH Root Login - Root login setting could not be re-verified
+
+[WARN] SSH Port - Using default port 22
+
+[PASS] Firewall Status (UFW) - UFW firewall is active and protecting your system
+
+[PASS] Disk Usage - Healthy disk space available (30% used)
+
+[FAIL] Password Policy - No password policy configured
+
+================================
+System Information Summary:
+Hostname: audit-test-host
+================================
+End of VPS Audit Report
